@@ -518,19 +518,11 @@ body {
     return tmp.textContent || tmp.innerText || '';
   }
 
-  /* ── Remove URL and boilerplate link-intro phrases from description ── */
+  /* ── Remove only URLs from description (they become the CTA button) ── */
   function cleanDescription(text) {
     if (!text) return '';
     var cleaned = text
       .replace(/https?:\/\/[^\s<>"']+/g, '')
-      .replace(/szczeg[óo]łowy opis (oraz|i) bilety online pod linkiem\s*:?\s*/gi, '')
-      .replace(/bilety (online )?pod linkiem\s*:?\s*/gi, '')
-      .replace(/zapisy (i szczeg[óo]ły )?(pod |na )?(linkiem|stronie)\s*:?\s*/gi, '')
-      .replace(/wi[ęe]cej informacji (pod |na )?(linkiem|stronie)\s*:?\s*/gi, '')
-      .replace(/link do zapis[óo]w\s*:?\s*/gi, '')
-      .replace(/wszystki[e]? szczeg[óo]ły (na |pod )?(stronie|linkiem)\s*:?\s*/gi, '')
-      .replace(/szczeg[óo]ły (i zapisy )?(na |pod )?(stronie|linkiem)\s*:?\s*/gi, '')
-      .replace(/pe[łl]en opis (na |pod )?(stronie|linkiem)\s*:?\s*/gi, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
     return cleaned;
@@ -906,15 +898,31 @@ body {
     } else {
       dateStr = formatDate(ev.startFull);
     }
-    var timeStr = ev.isAllDay ? 'Wydarzenie wielodniowe' : formatTimeRange(ev.startFull, ev.endFull);
-    if (ev.isAllDay && !ev.isMultiDay) timeStr = 'Cały dzień';
+    var timeStr;
+    if (ev.isMultiDay) {
+      if (ev.isAllDay) {
+        timeStr = null; /* hide time row entirely for all-day multi-day events */
+      } else {
+        /* For timed multi-day events, show just the start time */
+        var s = new Date(ev.startFull);
+        var h = s.getHours();
+        var m = s.getMinutes();
+        timeStr = 'Rozpoczęcie: ' + (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+      }
+    } else if (ev.isAllDay) {
+      timeStr = 'Cały dzień';
+    } else {
+      timeStr = formatTimeRange(ev.startFull, ev.endFull);
+    }
 
     var html = '<button class="cal-detail-close" id="closeDetail" aria-label="Zamknij">&#215;</button>';
     html += '<div class="cal-detail-cat cat-' + cat + '">' + CAT_LABELS[cat] + '</div>';
     html += '<div class="cal-detail-title">' + escapeHtml(ev.title) + '</div>';
     html += '<div class="cal-detail-meta">';
     html += '<div class="cal-detail-meta-row"><span class="cal-detail-meta-icon">&#128197;</span><span>' + dateStr + '</span></div>';
-    html += '<div class="cal-detail-meta-row"><span class="cal-detail-meta-icon">&#128336;</span><span>' + timeStr + '</span></div>';
+    if (timeStr) {
+      html += '<div class="cal-detail-meta-row"><span class="cal-detail-meta-icon">&#128336;</span><span>' + timeStr + '</span></div>';
+    }
     if (ev.location) {
       html += '<div class="cal-detail-meta-row"><span class="cal-detail-meta-icon">&#128205;</span><span>' + escapeHtml(ev.location) + '</span></div>';
     }
