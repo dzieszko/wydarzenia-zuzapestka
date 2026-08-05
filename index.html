@@ -256,6 +256,8 @@ body {
   position: relative;
   max-height: 90vh;
   overflow-y: auto;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 .cal-detail-close {
   position: absolute;
@@ -322,6 +324,9 @@ body {
   color: #555;
   line-height: 1.65;
   margin-bottom: 20px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 .cal-detail-desc a {
   color: var(--rust);
@@ -502,8 +507,14 @@ body {
   /* ── Strip HTML tags for clean display ── */
   function stripHtml(html) {
     if (!html) return '';
+    /* Convert <br> and block-level closing tags to newlines before stripping */
+    var withBreaks = html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<\/li>/gi, '\n');
     var tmp = document.createElement('div');
-    tmp.innerHTML = html;
+    tmp.innerHTML = withBreaks;
     return tmp.textContent || tmp.innerText || '';
   }
 
@@ -517,6 +528,9 @@ body {
       .replace(/zapisy (i szczeg[óo]ły )?(pod |na )?(linkiem|stronie)\s*:?\s*/gi, '')
       .replace(/wi[ęe]cej informacji (pod |na )?(linkiem|stronie)\s*:?\s*/gi, '')
       .replace(/link do zapis[óo]w\s*:?\s*/gi, '')
+      .replace(/wszystki[e]? szczeg[óo]ły (na |pod )?(stronie|linkiem)\s*:?\s*/gi, '')
+      .replace(/szczeg[óo]ły (i zapisy )?(na |pod )?(stronie|linkiem)\s*:?\s*/gi, '')
+      .replace(/pe[łl]en opis (na |pod )?(stronie|linkiem)\s*:?\s*/gi, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
     return cleaned;
@@ -602,25 +616,58 @@ body {
         return res.json();
       })
       .then(function(data) {
-        var events = (data.items || []).map(function(item) {
+        var events = [];
+        (data.items || []).forEach(function(item) {
           var isAllDay = !!item.start.date;
           var startStr = item.start.dateTime || item.start.date;
           var endStr = item.end.dateTime || item.end.date;
           var startDate = new Date(startStr);
+          var endDate = new Date(endStr);
           var rawDesc = stripHtml(item.description || '');
 
-          return {
+          /* For all-day events, Google uses exclusive end date (Oct 8-11 means end = Oct 12) */
+          var realEnd = new Date(endDate);
+          if (isAllDay) {
+            realEnd.setDate(realEnd.getDate() - 1);
+          }
+
+          /* Calculate how many days this event spans */
+          var startDay = startDate.getDate();
+          var lastDay = realEnd.getDate();
+          var isMultiDay = (realEnd.getTime() - startDate.getTime()) > 24 * 60 * 60 * 1000
+            || (!isAllDay && realEnd.getDate() !== startDate.getDate());
+
+          /* For multi-day events within this month, create an entry for each day */
+          var daysInThisMonth = new Date(curYear, curMonth + 1, 0).getDate();
+          var loopStart = (startDate.getFullYear() === curYear && startDate.getMonth() === curMonth)
+            ? startDate.getDate() : 1;
+          var loopEnd = (realEnd.getFullYear() === curYear && realEnd.getMonth() === curMonth)
+            ? realEnd.getDate() : daysInThisMonth;
+
+          var baseEvent = {
             id: item.id,
             title: item.summary || 'Wydarzenie',
-            day: startDate.getDate(),
             startFull: startStr,
             endFull: endStr,
             isAllDay: isAllDay,
+            isMultiDay: isMultiDay,
             location: item.location || '',
             description: cleanDescription(rawDesc),
             bookingUrl: extractUrl(rawDesc),
             cat: detectCategory(item.summary)
           };
+
+          if (!isMultiDay) {
+            baseEvent.day = startDay;
+            events.push(baseEvent);
+          } else {
+            for (var d = loopStart; d <= loopEnd; d++) {
+              var copy = {};
+              for (var k in baseEvent) copy[k] = baseEvent[k];
+              copy.day = d;
+              events.push(copy);
+            }
+          }
         });
 
         eventsCache[key] = events;
@@ -847,8 +894,20 @@ body {
     var card = document.getElementById('detailCard');
     var cat = ev.cat;
 
-    var dateStr = formatDate(ev.startFull);
-    var timeStr = ev.isAllDay ? 'Cały dzień' : formatTimeRange(ev.startFull, ev.endFull);
+    var dateStr;
+    if (ev.isMultiDay) {
+      dateStr = formatDate(ev.startFull) + ' – ' + formatDate(ev.endFull);
+      if (ev.isAllDay) {
+        /* For all-day multi-day events, adjust the end date display (Google uses exclusive end) */
+        var adjustedEnd = new Date(ev.endFull);
+        adjustedEnd.setDate(adjustedEnd.getDate() - 1);
+        dateStr = formatDate(ev.startFull) + ' – ' + formatDate(adjustedEnd.toISOString());
+      }
+    } else {
+      dateStr = formatDate(ev.startFull);
+    }
+    var timeStr = ev.isAllDay ? 'Wydarzenie wielodniowe' : formatTimeRange(ev.startFull, ev.endFull);
+    if (ev.isAllDay && !ev.isMultiDay) timeStr = 'Cały dzień';
 
     var html = '<button class="cal-detail-close" id="closeDetail" aria-label="Zamknij">&#215;</button>';
     html += '<div class="cal-detail-cat cat-' + cat + '">' + CAT_LABELS[cat] + '</div>';
