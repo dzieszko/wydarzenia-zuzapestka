@@ -498,11 +498,30 @@ body {
     return 'nature';
   }
 
-  /* ── Extract first URL from text ── */
-  function extractUrl(text) {
-    if (!text) return null;
-    var m = text.match(/https?:\/\/[^\s<>"']+/);
-    return m ? m[0] : null;
+  /* ── Extract booking URL: prefer href from <a> tags, fall back to text ── */
+  function extractUrl(text, rawHtml) {
+    var url = null;
+
+    /* First try: extract from href attribute in raw HTML */
+    if (rawHtml) {
+      var hrefMatch = rawHtml.match(/href=["'](https?:\/\/[^"']+)["']/i);
+      if (hrefMatch) {
+        url = hrefMatch[1].replace(/&amp;/g, '&');
+      }
+    }
+
+    /* Fallback: extract from plain text */
+    if (!url && text) {
+      var m = text.match(/https?:\/\/[^\s<>"']+/);
+      if (m) url = m[0];
+    }
+
+    /* Upgrade http to https */
+    if (url && url.indexOf('http://') === 0) {
+      url = 'https://' + url.substring(7);
+    }
+
+    return url;
   }
 
   /* ── Strip HTML tags for clean display ── */
@@ -616,7 +635,8 @@ body {
           var endStr = item.end.dateTime || item.end.date;
           var startDate = new Date(startStr);
           var endDate = new Date(endStr);
-          var rawDesc = stripHtml(item.description || '');
+          var rawHtml = item.description || '';
+          var rawDesc = stripHtml(rawHtml);
 
           /* For all-day events, Google uses exclusive end date (Oct 8-11 means end = Oct 12) */
           var realEnd = new Date(endDate);
@@ -646,7 +666,7 @@ body {
             isMultiDay: isMultiDay,
             location: item.location || '',
             description: cleanDescription(rawDesc),
-            bookingUrl: extractUrl(rawDesc),
+            bookingUrl: extractUrl(rawDesc, rawHtml),
             cat: detectCategory(item.summary)
           };
 
